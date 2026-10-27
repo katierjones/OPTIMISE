@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mean Airway Pressure calculator - OPTIMISE</title>
+<style>
+:root{--bg:#ffffff;--card:#f4f4f1;--text:#1f1f1d;--text2:#5f5e5a;--line:#d6d5cf;--accent:#185FA5;--ok:#3B6D11;--warn:#854F0B;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1c1a;--card:#2a2a27;--text:#f1efe8;--text2:#b4b2a9;--line:#444441;--accent:#85B7EB;--ok:#97C459;--warn:#EF9F27;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1c1c1a;--card:#2a2a27;--text:#f1efe8;--text2:#b4b2a9;--line:#444441;--accent:#85B7EB;--ok:#97C459;--warn:#EF9F27;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.5}
+main{max-width:560px;margin:0 auto;padding:16px}
+h1{font-size:20px;font-weight:500;margin:0 0 4px}
+.sub{font-size:13px;color:var(--text2);margin:0 0 16px}
+.row{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.row label{font-size:14px;color:var(--text2);width:84px}
+.row input{flex:1;accent-color:var(--accent)}
+.row span{font-size:14px;font-weight:500;width:72px;text-align:right}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.card{background:var(--card);border-radius:8px;padding:14px}
+.card .k{font-size:13px;color:var(--text2)}
+.card .v{font-size:24px;font-weight:500}
+.card .d{font-size:13px}
+svg{display:block;width:100%;height:auto;margin:0 0 8px}
+#advice{font-size:14px;color:var(--text2)}
+.foot{font-size:12px;color:var(--text2);margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
+</style>
+</head>
+<body>
+<main>
+<h1>Mean Airway Pressure calculator - OPTIMISE</h1>
+<p class="sub">Simplified time-cycled, pressure-limited model for concept illustration only.</p>
+
+<div class="row"><label for="pip">PIP</label><input type="range" id="pip" min="10" max="26" step="1" value="18"><span id="pip-o"></span></div>
+<div class="row"><label for="peep">PEEP</label><input type="range" id="peep" min="4" max="14" step="1" value="6"><span id="peep-o"></span></div>
+<div class="row"><label for="ti">I-time</label><input type="range" id="ti" min="0.2" max="1" step="0.05" value="0.5"><span id="ti-o"></span></div>
+<div class="row"><label for="rate">Rate</label><input type="range" id="rate" min="20" max="60" step="5" value="40"><span id="rate-o"></span></div>
+<div class="row"><label for="tgt">Target MAP</label><input type="range" id="tgt" min="6" max="14" step="0.5" value="10"><span id="tgt-o"></span></div>
+
+<div class="grid">
+  <div class="card"><div class="k">Calculated MAP</div><div class="v" id="map-v"></div><div class="d" id="map-d"></div></div>
+  <div class="card"><div class="k">I:E ratio</div><div class="v" id="ie-v"></div><div class="d" id="te-v" style="color:var(--text2)"></div></div>
+</div>
+
+<svg id="wave" viewBox="0 0 340 170" role="img" aria-label="Pressure waveform over three seconds">
+  <line x1="30" y1="10" x2="30" y2="140" stroke="var(--line)" stroke-width="1"/>
+  <line x1="30" y1="140" x2="335" y2="140" stroke="var(--line)" stroke-width="1"/>
+  <g id="grid"></g>
+  <line id="tgtline" x1="30" x2="335" stroke="var(--ok)" stroke-width="1" stroke-dasharray="2 3"/>
+  <line id="mapline" x1="30" x2="335" stroke="var(--warn)" stroke-width="1" stroke-dasharray="5 3"/>
+  <polyline id="trace" fill="none" stroke="var(--accent)" stroke-width="1.75" stroke-linejoin="round"/>
+  <text id="lbl-map" x="333" text-anchor="end" font-size="11" fill="var(--warn)"></text>
+  <text id="lbl-tgt" x="333" text-anchor="end" font-size="11" fill="var(--ok)"></text>
+  <text x="182" y="162" text-anchor="middle" font-size="11" fill="var(--text2)">Time (3 seconds shown)</text>
+  <text x="4" y="12" font-size="11" fill="var(--text2)">cmH₂O</text>
+</svg>
+
+<div id="advice"></div>
+<p class="foot">MAP = [(PIP × Ti) + (PEEP × Te)] ÷ Ttot, where Te = Ttot − Ti and Ttot = 60 ÷ rate. Simplified square-wave estimate. Not a substitute for clinical judgement or local guidelines.</p>
+</main>
+<script>
+var K=1;
+function $(i){return document.getElementById(i);}
+function f1(x){return (Math.round(x*10)/10).toFixed(1);}
+function update(src){
+  var pip=+$('pip').value, peep=+$('peep').value, ti=+$('ti').value, rate=+$('rate').value, tgt=+$('tgt').value;
+  if(peep>=pip){
+    if(src==='peep'){pip=Math.min(peep+1,26);if(peep>=pip){peep=pip-1;}}
+    else{peep=Math.max(pip-1,4);if(peep>=pip){pip=peep+1;}}
+    $('pip').value=pip;$('peep').value=peep;
+  }
+  var cyc=60/rate, te=cyc-ti;
+  $('pip-o').textContent=pip+' cmH₂O';
+  $('peep-o').textContent=peep+' cmH₂O';
+  $('ti-o').textContent=(Math.round(ti*100)/100).toFixed(2)+' s';
+  $('rate-o').textContent=rate+' /min';
+  $('tgt-o').textContent=f1(tgt);
+  var frac=Math.min(ti/cyc,1);
+  var map=peep+K*(pip-peep)*frac;
+  $('map-v').textContent=f1(map);
+  var d=map-tgt, dc=$('map-d');
+  if(Math.abs(d)<=0.3){dc.textContent='On target';dc.style.color='var(--ok)';}
+  else if(d>0){dc.textContent=f1(d)+' above target';dc.style.color='var(--warn)';}
+  else{dc.textContent=f1(-d)+' below target';dc.style.color='var(--warn)';}
+  if(te>0.05){
+    $('ie-v').textContent='1 : '+(Math.round(te/ti*10)/10).toFixed(1);
+    $('te-v').textContent='Te '+(Math.round(te*100)/100).toFixed(2)+' s';
+  } else {
+    $('ie-v').textContent='Ti ≥ cycle';
+    $('te-v').textContent='No expiratory time';
+  }
+  var W=305,H=130,x0=30,y0=140,ymax=30,span=3;
+  function X(t){return x0+(t/span)*W;}
+  function Y(p){return y0-(p/ymax)*H;}
+  var pts=[],t=0,ramp=Math.min(0.05,ti/2);
+  while(t<span){
+    pts.push([X(t),Y(peep)]);
+    var a=t+0.01;
+    if(a<span){pts.push([X(Math.min(a+ramp,span)),Y(pip)]);}
+    var b=t+Math.min(ti,cyc);
+    if(b<span){pts.push([X(b),Y(pip)]);pts.push([X(Math.min(b+0.03,span)),Y(peep)]);}
+    else{pts.push([X(span),Y(pip)]);}
+    t+=cyc;
+  }
+  $('trace').setAttribute('points',pts.map(function(p){return f1(p[0])+','+f1(p[1]);}).join(' '));
+  $('mapline').setAttribute('y1',Y(map));$('mapline').setAttribute('y2',Y(map));
+  $('tgtline').setAttribute('y1',Y(tgt));$('tgtline').setAttribute('y2',Y(tgt));
+  var lm=$('lbl-map'),lt=$('lbl-tgt');
+  lm.setAttribute('y',Y(map)-4);lm.textContent='MAP '+f1(map);
+  lt.setAttribute('y',Y(tgt)+(map>=tgt?13:-4));lt.textContent='Target '+f1(tgt);
+  var g='';
+  [0,10,20,30].forEach(function(v){g+='<line x1="30" x2="335" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="var(--line)" stroke-width="0.5"/><text x="26" y="'+(Y(v)+4)+'" text-anchor="end" font-size="11" fill="var(--text2)">'+v+'</text>';});
+  $('grid').innerHTML=g;
+  var need=(tgt-peep)/(K*(pip-peep)), tiNeed=need*cyc, msg;
+  if(need>1){msg='With this PIP and PEEP, even a continuous inspiratory phase would not reach the target. You would need a higher PIP or PEEP.';}
+  else if(need<=0){msg='PEEP alone already meets or exceeds the target, so any inflation pressure pushes MAP above it.';}
+  else{msg='Holding PIP, PEEP and rate, an I-time of about '+(Math.round(tiNeed*100)/100).toFixed(2)+' s would reach the target'+(tiNeed>1?', which is beyond the I-time range on this tool.':(cyc-tiNeed<0.2?', but that leaves very little expiratory time.':'.'));}
+  $('advice').textContent=msg;
+}
+['pip','peep','ti','rate','tgt'].forEach(function(i){$(i).addEventListener('input',function(){update(i);});});
+update('');
+</script>
+</body>
+</html>
